@@ -33,6 +33,9 @@ const logger = winston.createLogger({
 // Initialize Express app
 const app = express();
 
+// Configure to trust proxy (needed for Render.com and other PaaS platforms)
+app.set('trust proxy', 1);
+
 // Add request ID middleware for better log tracking
 app.use((req, res, next) => {
   req.id = crypto.randomBytes(16).toString('hex');
@@ -73,8 +76,22 @@ const verifySignature = (req, res, next) => {
   const hmac = crypto.createHmac('sha256', webhookSecret);
   const computedSignature = hmac.update(payload).digest('hex');
   
+  logger.debug({
+    requestId: req.id,
+    message: 'Verifying signature',
+    receivedSignature: signature.substring(0, 10) + '...',
+    computedSignaturePrefix: computedSignature.substring(0, 10) + '...',
+    signatureMatch: signature === computedSignature
+  });
+  
   if (signature !== computedSignature) {
-    logger.error({ requestId: req.id, message: 'Invalid signature' });
+    logger.error({ 
+      requestId: req.id, 
+      message: 'Invalid signature',
+      receivedSignature: signature.substring(0, 10) + '...',
+      computedSignaturePrefix: computedSignature.substring(0, 10) + '...',
+      webhookSecretLength: webhookSecret.length
+    });
     return res.status(401).json({ error: 'Invalid signature' });
   }
   
@@ -83,6 +100,7 @@ const verifySignature = (req, res, next) => {
 
 // Generate MEXC signature
 const generateMEXCSignature = (params, secret) => {
+  // Ensure all parameters are properly encoded
   const sortedParams = Object.keys(params)
     .sort()
     .reduce((result, key) => {
@@ -91,7 +109,7 @@ const generateMEXCSignature = (params, secret) => {
     }, {});
   
   const queryString = Object.entries(sortedParams)
-    .map(([key, value]) => `${key}=${value}`)
+    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
     .join('&');
   
   return crypto
@@ -114,7 +132,8 @@ const executeMEXCTrade = async (tradeData, requestId, retryCount = 0) => {
       side: side.toUpperCase(),
       type: type || 'LIMIT',
       quantity,
-      timestamp
+      timestamp,
+      recvWindow: 5000 // Add recvWindow parameter to avoid timestamp issues
     };
     
     // Add price for limit orders
@@ -198,6 +217,20 @@ const executeMEXCTrade = async (tradeData, requestId, retryCount = 0) => {
         data: error.response.data,
         status: error.response.status
       });
+      
+      // Retry on signature errors (code 700002) if within retry limit
+      if (error.response.data && 
+          error.response.data.code === 700002 && 
+          retryCount < maxRetries) {
+        logger.info({
+          requestId,
+          message: `Retrying trade execution after signature error (${retryCount + 1}/${maxRetries})`,
+          tradeData
+        });
+        
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        return executeMEXCTrade(tradeData, requestId, retryCount + 1);
+      }
     }
     
     throw error;
@@ -212,7 +245,11 @@ app.post('/webhook/tradingview', verifySignature, async (req, res) => {
     logger.info({
       requestId: req.id,
       message: 'Received webhook',
-      payload: req.body
+      payload: req.body,
+      headers: {
+        'x-forwarded-for': req.headers['x-forwarded-for'],
+        'user-agent': req.headers['user-agent']
+      }
     });
     
     // Process TradingView webhook payload
