@@ -1,0 +1,23 @@
+# Server configuration
+PORT=3000
+NODE_ENV=production
+VERSION=1.0.0
+
+# Security
+WEBHOOK_SECRET=your_webhook_secret_key_here
+
+# MEXC API credentials
+MEXC_API_KEY=mx0vglsefMLYvqtqZW
+MEXC_API_SECRET=6a908aae6896434696eec1cf723e9e19
+
+# API Configuration
+MEXC_API_TIMEOUT=5000
+MAX_RETRIES=3
+RETRY_DELAY=500
+
+# Strategy-specific parameters (JSON strings)
+# STRATEGY_MA_CROSSOVER_PARAMS={"timeInForce":"GTC"}
+# STRATEGY_RSI_STRATEGY_PARAMS={"timeInForce":"IOC"}
+
+# Logging
+LOG_LEVEL=info

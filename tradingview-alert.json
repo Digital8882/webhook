@@ -1,0 +1,10 @@
+{
+  "symbol": "BTCUSDT",
+  "side": "{{strategy.order.action}}",
+  "quantity": "0.001",
+  "price": "{{close}}",
+  "type": "LIMIT",
+  "strategy": "MA_CROSSOVER",
+  "timestamp": "{{timenow}}",
+  "message": "{{strategy.order.comment}}"
+}
